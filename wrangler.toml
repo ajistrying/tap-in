@@ -1,0 +1,22 @@
+name = "public-pkm-interface"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+pages_build_output_dir = ".svelte-kit/cloudflare"
+
+# Vectorize index for RAG
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "pkm-public-index"
+
+# KV namespace for rate limiting
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "" # Fill in after creating KV namespace
+
+[vars]
+# Add non-secret environment variables here
+
+# Secrets (set via wrangler secret put):
+# - DATABASE_URL
+# - DEEPSEEK_API_KEY

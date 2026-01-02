@@ -4,3 +4,99 @@
 }
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+@keyframes float-slow {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(18px, 12px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes pan-grid {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 120px 80px;
+  }
+}
+
+@keyframes mesh-drift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-20px, 14px, 0) rotate(1.5deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+.ambient-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.ambient-bg__glow {
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 999px;
+  filter: blur(80px);
+  opacity: 0.4;
+  z-index: 1;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 139, 87, 0.35), transparent 65%);
+  animation: float-slow 14s ease-in-out infinite;
+}
+
+.ambient-bg__glow--top {
+  top: -120px;
+  left: -80px;
+}
+
+.ambient-bg__glow--bottom {
+  bottom: -160px;
+  right: -120px;
+  background: radial-gradient(circle at 70% 70%, rgba(255, 180, 120, 0.28), transparent 70%);
+  animation: drift 18s ease-in-out infinite;
+}
+
+.ambient-bg__grid {
+  position: absolute;
+  inset: -20% 0 0 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.2) 1.3px, transparent 1.3px);
+  background-size: 40px 40px;
+  opacity: 0.6;
+  mix-blend-mode: screen;
+  z-index: 2;
+  animation: pan-grid 24s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-bg__glow,
+  .ambient-bg__mesh,
+  .ambient-bg__grid {
+    animation: none;
+  }
+}

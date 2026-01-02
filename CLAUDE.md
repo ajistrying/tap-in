@@ -7,9 +7,8 @@ A public-facing AI chat interface where visitors can ask natural language questi
 | Layer | Technology |
 |-------|------------|
 | Frontend | SvelteKit 2.x, Svelte 5, Tailwind CSS 4, DaisyUI |
-| Database | PostgreSQL (Neon serverless) |
+| Database | PostgreSQL (Neon serverless) with pgvector |
 | ORM | Drizzle ORM with Neon HTTP driver |
-| Vector DB | Cloudflare Vectorize |
 | Embeddings | Workers AI (`@cf/baai/bge-base-en-v1.5`, 768 dims) |
 | LLM | DeepSeek API |
 | Hosting | Cloudflare Pages + Workers |
@@ -26,18 +25,16 @@ A public-facing AI chat interface where visitors can ask natural language questi
 │   │       └── chat/+server.ts    # RAG endpoint
 │   ├── lib/
 │   │   ├── server/
-│   │   │   └── db/
-│   │   │       ├── schema.ts      # Drizzle schema
-│   │   │       └── index.ts       # DB client factory
+│   │   │   ├── db/
+│   │   │   │   ├── schema.ts      # Drizzle schema
+│   │   │   │   └── index.ts       # DB client factory
+│   │   │   ├── embeddings.ts      # Query embedding generation
+│   │   │   └── rate-limit.ts      # Rate limiting utility
 │   │   ├── components/            # Svelte components
 │   │   └── utils/                 # Shared utilities
 │   ├── app.css                    # Tailwind entry
 │   ├── app.d.ts                   # TypeScript declarations
 │   └── app.html                   # HTML template
-├── scripts/                       # Content pipeline scripts
-│   ├── extract-public.ts          # Find public: true files
-│   ├── chunk-markdown.ts          # Semantic chunking
-│   └── sync-vectorize.ts          # Embeddings + Vectorize sync
 ├── drizzle/                       # Generated migrations
 ├── drizzle.config.ts              # Drizzle Kit config
 ├── wrangler.toml                  # Cloudflare bindings
@@ -46,24 +43,82 @@ A public-facing AI chat interface where visitors can ask natural language questi
 └── package.json
 ```
 
+Note: Content pipeline scripts (extract, chunk, embed, sync) live in the PKM system, not this app.
+
 ## Architecture
 
+### Full System Flow
+
 ```
-Content Source (markdown with `public: true`)
-        │
-        ▼
-Content Pipeline (scripts/)
-  1. Extract public content
-  2. Chunk by H2/H3 sections (~500 tokens)
-  3. Generate embeddings (Workers AI)
-  4. Upsert to Vectorize
-        │
-        ▼
-Cloudflare (Pages + Workers + Vectorize)
-        │
-        ▼
-User Query → Embed → Vectorize Search → DeepSeek + Context → Response
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              PKM SYSTEM (Obsidian)                           │
+│                                                                              │
+│  ┌─────────────────┐                                                         │
+│  │  Markdown Files │                                                         │
+│  │  (public: true) │                                                         │
+│  └────────┬────────┘                                                         │
+│           │                                                                  │
+│           ▼                                                                  │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐          │
+│  │    Extract      │───▶│     Chunk       │───▶│    Embed        │          │
+│  │  public content │    │  by H2/H3       │    │  (768 dims)     │          │
+│  └─────────────────┘    │  ~500 tokens    │    └────────┬────────┘          │
+│                         └─────────────────┘             │                   │
+└─────────────────────────────────────────────────────────┼───────────────────┘
+                                                          │
+                                                          │ Sync (upsert)
+                                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         NEON POSTGRESQL (pgvector)                           │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │                        content_chunks table                            │  │
+│  ├──────────┬──────────────┬─────────────┬───────────┬───────────────────┤  │
+│  │    id    │   content    │ source_file │  heading  │ embedding [768]   │  │
+│  ├──────────┼──────────────┼─────────────┼───────────┼───────────────────┤  │
+│  │  uuid    │ "Current..." │ "goals.md"  │ "Q1 2025" │ [0.12, -0.34, ...]│  │
+│  │  uuid    │ "Working..." │ "projects"  │ "TapIn"   │ [0.08, 0.21, ...] │  │
+│  └──────────┴──────────────┴─────────────┴───────────┴───────────────────┘  │
+│                                                                              │
+│  HNSW Index (vector_cosine_ops) for fast similarity search                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ Query
+                                      ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      THIS APP (Public Chat Interface)                        │
+│                         Cloudflare Pages + Workers                           │
+│                                                                              │
+│  ┌─────────┐      ┌──────────────┐      ┌─────────────┐      ┌───────────┐  │
+│  │  User   │─────▶│  Rate Limit  │─────▶│   Embed     │─────▶│  pgvector │  │
+│  │  Query  │      │  Check (DB)  │      │   Query     │      │  Search   │  │
+│  └─────────┘      └──────────────┘      │ Workers AI  │      │  Top 5    │  │
+│                                         └─────────────┘      └─────┬─────┘  │
+│                                                                    │        │
+│                                                                    ▼        │
+│  ┌─────────┐      ┌──────────────┐      ┌─────────────────────────────────┐ │
+│  │ Stream  │◀─────│   DeepSeek   │◀─────│  Build RAG Prompt               │ │
+│  │Response │      │   LLM API    │      │  System: "You are Wellington's  │ │
+│  └─────────┘      └──────────────┘      │   public assistant..."          │ │
+│                                         │  Context: [top 5 chunks]        │ │
+│                                         │  User: {query}                  │ │
+│                                         └─────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Data Flow Summary
+
+| Step | System | Action |
+|------|--------|--------|
+| 1 | PKM | Extracts markdown files with `public: true` frontmatter |
+| 2 | PKM | Chunks content by H2/H3 headers (~500 tokens each) |
+| 3 | PKM | Generates 768-dim embeddings for each chunk |
+| 4 | PKM | Upserts chunks + embeddings to Neon DB |
+| 5 | App | Receives user query, checks rate limit |
+| 6 | App | Generates embedding for user query (Workers AI) |
+| 7 | App | Searches pgvector for top 5 similar chunks |
+| 8 | App | Builds prompt with context, calls DeepSeek |
+| 9 | App | Streams response back to user |
 
 ## Database Schema
 
@@ -108,19 +163,43 @@ pnpm wrangler pages deploy .svelte-kit/cloudflare # Deploy
 ## Cloudflare Bindings
 
 Configured in `wrangler.toml`:
-- `VECTORIZE` - Vectorize index binding
-- `RATE_LIMIT_KV` - KV namespace for rate limiting
+- `RATE_LIMIT_KV` - KV namespace for rate limiting (optional, can use DB instead)
 
 Platform types in `src/app.d.ts`.
+
+## pgvector Setup
+
+Enable the extension and create an HNSW index for fast similarity search:
+
+```sql
+-- Enable pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- After populating data, create HNSW index for cosine similarity
+CREATE INDEX ON content_chunks USING hnsw (embedding vector_cosine_ops);
+```
+
+Similarity search query pattern:
+
+```sql
+-- Find top 5 most similar chunks using cosine distance
+SELECT id, content, source_file, heading, 
+       1 - (embedding <=> $query_embedding) AS similarity
+FROM content_chunks
+ORDER BY embedding <=> $query_embedding
+LIMIT 5;
+```
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | DB Client | Neon serverless | HTTP-based, works in CF Workers (no TCP) |
+| Vector Store | pgvector (Neon) | Single DB for content + embeddings, no separate service |
 | Chunking | H2/H3 header-based | Semantic coherence, ~500 tokens |
 | Rate limit | 10 req/min/IP | Prevents abuse, low friction |
 | Embeddings | Workers AI BGE | 768 dims, fast, CF-integrated |
+| Vector Index | HNSW | Better query performance than IVFFlat |
 
 ## Privacy
 
@@ -134,42 +213,26 @@ Platform types in `src/app.d.ts`.
 ## TODO: Path to Deployment
 
 ### Phase 1: Infrastructure Setup
-- [ ] Create Neon database project
-  - [ ] Sign up at neon.tech
-  - [ ] Create project and copy connection string
-  - [ ] Add to `.env` locally
-  - [ ] Run `pnpm db:push` to create tables
+- [x] Create Neon database project
+  - [x] Sign up at neon.tech
+  - [x] Create project and copy connection string
+  - [x] Add to `.env` locally
+  - [x] Run `pnpm db:push` to create tables
+- [ ] Enable pgvector extension
+  - [ ] Run `CREATE EXTENSION IF NOT EXISTS vector;` in Neon SQL Editor
 - [ ] Create Cloudflare resources
-  - [ ] Vectorize index: `pkm-public-index` (768 dims, cosine)
-  - [ ] KV namespace for rate limiting
+  - [ ] KV namespace for rate limiting (optional)
   - [ ] Pages project
-  - [ ] Update `wrangler.toml` with KV namespace ID
 - [ ] Set Cloudflare secrets
   - [ ] `wrangler secret put DATABASE_URL`
   - [ ] `wrangler secret put DEEPSEEK_API_KEY`
 
-### Phase 2: Content Pipeline
-- [ ] Create `scripts/extract-public.ts`
-  - [ ] Scan source directory for markdown files
-  - [ ] Parse YAML frontmatter, filter `public: true`
-  - [ ] Strip private sections (Gratitude, personal meetings)
-  - [ ] Sanitize wiki-links to private notes
-- [ ] Create `scripts/chunk-markdown.ts`
-  - [ ] Split content by H2/H3 headers
-  - [ ] Target ~500 tokens per chunk
-  - [ ] Preserve metadata (source file, heading)
-- [ ] Create `scripts/sync-vectorize.ts`
-  - [ ] Generate embeddings via Workers AI API
-  - [ ] Upsert vectors to Cloudflare Vectorize
-  - [ ] Store chunks in Neon DB with embeddings
-- [ ] Test pipeline locally with sample files
-
-### Phase 3: Chat API
+### Phase 2: Chat API
 - [ ] Create `/api/chat/+server.ts`
   - [ ] Parse user message from request
-  - [ ] Implement rate limiting (check KV, 10 req/min/IP)
+  - [ ] Implement rate limiting (DB or KV, 10 req/min/IP)
   - [ ] Generate query embedding (Workers AI)
-  - [ ] Search Vectorize for top 5 similar chunks
+  - [ ] Search pgvector for top 5 similar chunks (cosine distance)
   - [ ] Build prompt with RAG context
   - [ ] Call DeepSeek API
   - [ ] Return response
@@ -177,7 +240,7 @@ Platform types in `src/app.d.ts`.
 - [ ] Create embedding utility (`src/lib/server/embeddings.ts`)
 - [ ] Add error handling and validation
 
-### Phase 4: Chat UI
+### Phase 3: Chat UI
 - [ ] Create `ChatMessage.svelte` component
   - [ ] User message styling
   - [ ] Assistant message styling with prose typography
@@ -194,35 +257,28 @@ Platform types in `src/app.d.ts`.
 - [ ] Add responsive layout
 - [ ] Test on mobile
 
-### Phase 5: CI/CD
+### Phase 4: CI/CD
 - [ ] Create `.github/workflows/deploy.yml`
   - [ ] Trigger on push to main
   - [ ] Install dependencies
-  - [ ] Run content pipeline scripts
   - [ ] Build SvelteKit app
   - [ ] Deploy to Cloudflare Pages
 - [ ] Add GitHub repository secrets
   - [ ] `CLOUDFLARE_API_TOKEN`
   - [ ] `CLOUDFLARE_ACCOUNT_ID`
-  - [ ] `DATABASE_URL`
-  - [ ] `DEEPSEEK_API_KEY`
 - [ ] Test deployment workflow
 
-### Phase 6: Content & Testing
-- [ ] Prepare initial public content
-  - [ ] Create sample markdown files with `public: true`
-  - [ ] Run content pipeline
-  - [ ] Verify vectors in Vectorize
+### Phase 5: Testing
+- [ ] Verify PKM has synced content to Neon DB
 - [ ] End-to-end testing
   - [ ] Test chat flow locally
   - [ ] Test rate limiting
   - [ ] Test with production deployment
 - [ ] Monitor and iterate
   - [ ] Check response quality
-  - [ ] Adjust chunking if needed
   - [ ] Tune system prompt
 
-### Phase 7: Polish (Optional)
+### Phase 6: Polish (Optional)
 - [ ] Add streaming responses
 - [ ] Add conversation persistence
 - [ ] Add analytics/monitoring

@@ -45,6 +45,7 @@
 	},
 	"dependencies": {
 		"@neondatabase/serverless": "^0.10.0",
+		"@openrouter/sdk": "^0.3.11",
 		"daisyui": "^5.5.14",
 		"drizzle-orm": "^0.39.0"
 	}

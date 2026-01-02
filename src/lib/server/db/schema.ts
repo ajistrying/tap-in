@@ -8,7 +8,7 @@ export const contentChunks = pgTable(
 		content: text('content').notNull(),
 		sourceFile: text('source_file').notNull(),
 		heading: text('heading'),
-		// 768 dimensions for BGE-base-en-v1.5 embeddings
+		// 768 dimensions for OpenRouter embeddings (nomic-embed-text-v1.5)
 		embedding: vector('embedding', { dimensions: 768 }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at').defaultNow().notNull()

@@ -33,6 +33,7 @@ Tables (Drizzle schema):
 - `rate_limits`
 - `chat_sessions`
 - `chat_messages`
+- `sync_manifest` (PKM sync state)
 
 pgvector is required:
 ```sql

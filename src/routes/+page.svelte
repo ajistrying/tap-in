@@ -134,7 +134,7 @@
     <header class="flex flex-col gap-3">
       <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Ask about what I’m working on</h1>
       <p class="w-3/4 text-base text-base-content/70 sm:text-lg">
-        Curious about what I’m building right now, or what I'm working on today? Use this chat to explore the publicly available information in my Personal Knowledge Management (PKM) system!
+        Curious about what I’m building, or what my tasks are for today? Use this chat to explore the publicly available information in my Personal Knowledge Management (PKM) system!
       </p>
     </header>
 
@@ -142,12 +142,6 @@
         <!-- Chat window -->
         <div class="card bg-base-100/80 shadow-xl">
             <div class="card-body flex min-h-[520px] flex-col gap-6 p-6 sm:p-8 lg:min-h-[600px]">
-                <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/60">Chat</p>
-                        <p class="text-xs text-base-content/60">Grounded in public notes</p>
-                    </div>
-                </div>
                 <div class="flex-1 min-h-0 space-y-4 overflow-y-auto pr-2 text-base" bind:this={messageListEl}>
                     {#each messages as message (message.id)}
                     <div class={`chat ${message.role === "user" ? "chat-end" : "chat-start"}`}>
@@ -171,7 +165,7 @@
                     {/each}
                 </div>
 
-                <div class="divider">Ask a question</div>
+                <div class="divider -my-1">Ask a question</div>
                 <form class="flex flex-col gap-3" on:submit|preventDefault={handleSubmit}>
                     <div class="flex w-full items-center gap-3">
                         <label class="input input-bordered flex w-full items-center gap-2">
@@ -194,7 +188,7 @@
                 <button class="btn btn-primary shrink-0" type="submit">Send</button>
               {/if}
             </div>
-                    <p class="text-xs text-base-content/60">Responses are grounded in public notes and recent work.</p>
+                    <p class="text-xs text-base-content/60">Responses are grounded in my public notes, recent work, and daily task data.</p>
                 </form>
             </div>
         </div>

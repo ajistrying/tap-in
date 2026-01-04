@@ -43,3 +43,10 @@ export const chatMessages = pgTable('chat_messages', {
 	content: text('content').notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
+
+// Sync state for PKM ingestion
+export const syncManifest = pgTable('sync_manifest', {
+	filePath: text('file_path').primaryKey(),
+	contentHash: text('content_hash').notNull(),
+	lastSynced: timestamp('last_synced', { withTimezone: true }).defaultNow()
+});

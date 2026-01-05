@@ -13,11 +13,7 @@ const config = {
 				configPath: undefined,
 				environment: undefined,
 				persist: undefined
-			},
-            routes: {
-                include: ["/*"],
-                exclude: ["<all>"],
-            },
+			}
         }),
     },
 };

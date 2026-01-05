@@ -7,7 +7,13 @@ const config = {
 
     kit: {
         adapter: adapter({
-            config: "",
+            config: undefined,
+            fallback: "404.html",
+            platformProxy: {
+				configPath: undefined,
+				environment: undefined,
+				persist: undefined
+			},
             routes: {
                 include: ["/*"],
                 exclude: ["<all>"],

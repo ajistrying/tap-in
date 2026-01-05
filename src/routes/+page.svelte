@@ -2,14 +2,16 @@
   import "../app.css";
   import { tick } from "svelte";
   import { runPipeline } from "$lib/client/pipeline";
+  import { renderMarkdown } from "$lib/client/markdown";
+  import ContactModal from "$lib/components/ContactModal.svelte";
 
   const exampleQuestions = [
-    "What are you focused on this month?",
-    "What are you focused on this today?",
-    "What projects are currently active?",
-    "Summarize your latest writing on product strategy.",
-    "What are you trying to improve next?",
-    "What’s the current roadmap for your PKM system?"
+    "What is he focused on today?",
+    "What is he focused on this month?",
+    "Which projects are currently active for him?",
+    "What has he been writing about in product strategy?",
+    "What is he trying to improve next?",
+    "What’s his current roadmap for the PKM system?"
   ];
 
   let inputValue = "";
@@ -19,13 +21,14 @@
   let abortController;
   let activeAssistantId = null;
   let pendingFollowup = null;
+  let contactModal;
 
   let messages = [
     {
       id: "welcome",
       role: "assistant",
       content:
-        "Hi! I can answer questions about current projects, public notes, and things I’m building. What do you want to explore?"
+        "Hi! I can answer questions about current projects, public notes, and things Wellington is building. What do you want to explore?"
     }
   ];
 
@@ -39,6 +42,10 @@
       return;
     }
     abortController.abort();
+  };
+
+  const openContactModal = () => {
+    contactModal?.open();
   };
 
   const scrollToBottom = async (behavior = "smooth") => {
@@ -71,10 +78,18 @@
     isStreaming = true;
     abortController = new AbortController();
     activeAssistantId = assistantMessageId;
+    const payloadMessages = messages
+      .filter((message) => message.content && message.content.trim().length > 0)
+      .slice(-12)
+      .map((message) => ({
+        role: message.role,
+        content: message.content
+      }));
 
     try {
       await runPipeline({
         question: trimmed,
+        messages: payloadMessages,
         followup: followupContext
           ? {
               originalQuestion: followupContext.originalQuestion
@@ -180,9 +195,15 @@
                         }`}
                         >
                         {#if message.content}
+                          {#if message.role === "assistant"}
+                            <div class="prose prose-sm max-w-none">
+                              {@html renderMarkdown(message.content)}
+                            </div>
+                          {:else}
                             {message.content}
+                          {/if}
                         {:else}
-                            <span class="loading loading-dots loading-sm"></span>
+                          <span class="loading loading-dots loading-sm"></span>
                         {/if}
                         </div>
                     </div>
@@ -239,8 +260,19 @@
                     </button>
                     {/each}
                 </div>
+                <div class="divider text-xs text-base-content/40 -my-1">or</div>
+                <div class="space-y-3 text-sm text-base-content/70">
+                    <p class="text-sm text-base-content/60">
+                        Want to collaborate or share a note? Drop me a message.
+                    </p>
+                    <button class="btn btn-outline btn-sm w-full" type="button" on:click={openContactModal}>
+                        Contact me
+                    </button>
+                </div>
             </div>
         </aside>
     </div>
   </section>
+
+  <ContactModal bind:this={contactModal} />
 </main>

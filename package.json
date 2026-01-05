@@ -48,6 +48,8 @@
 		"@openrouter/sdk": "^0.3.11",
 		"daisyui": "^5.5.14",
 		"drizzle-orm": "^0.39.0",
+		"isomorphic-dompurify": "^2.16.0",
+		"marked": "^15.0.12",
 		"zod": "^4.3.4"
 	}
 }

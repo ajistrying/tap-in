@@ -76,6 +76,18 @@ export const chatMessages = pgTable('chat_messages', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// Contact form submissions from the public site
+export const contactMessages = pgTable('contact_messages', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	email: text('email').notNull(),
+	message: text('message').notNull(),
+	ipAddress: text('ip_address'),
+	userAgent: text('user_agent'),
+	referrer: text('referrer'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
 // Sync state for PKM ingestion
 export const syncManifest = pgTable('sync_manifest', {
 	filePath: text('file_path').primaryKey(),

@@ -11,7 +11,18 @@ export const QueryPlanSchema = z.object({
   intent: z.enum(["accomplishments", "in_flight", "recap", "lookup"]),
   time_range: DateRange.nullable().default(null),
   doc_types: z
-    .array(z.enum(["daily-note", "project", "project-note", "goal", "idea-captures"]))
+    .array(
+      z.enum([
+        "daily-note",
+        "project",
+        "project-note",
+        "project-dashboard",
+        "recurring-tasks",
+        "weekly-review",
+        "goal",
+        "idea-captures"
+      ])
+    )
     .default([]),
   project: z.string().nullable().default(null),
   statuses: z.array(z.string()).default([]),
@@ -29,7 +40,7 @@ const PLANNER_SYSTEM_PROMPT = `Return ONLY JSON matching this schema:
 {
   "intent": "accomplishments" | "in_flight" | "recap" | "lookup",
   "time_range": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "timezone": "Area/City" } | null,
-  "doc_types": ["daily-note" | "project" | "project-note" | "goal" | "idea-captures"],
+  "doc_types": ["daily-note" | "project" | "project-note" | "project-dashboard" | "recurring-tasks" | "weekly-review" | "goal" | "idea-captures"],
   "project": string | null,
   "statuses": string[],
   "tags": string[],
@@ -42,6 +53,7 @@ Rules:
 - Resolve relative time ranges using Today and Timezone.
 - If a time-bound intent is missing a range, set followup_question and set time_range to null.
 - Use empty arrays for doc_types, statuses, tags when absent.
+- If the question implies "today", "now", or "current", prefer doc_types including "daily-note" and set time_range to today.
 - Do not output SQL or extra text.`;
 
 const buildPlannerPrompt = (question: string, today: string, timezone: string) =>

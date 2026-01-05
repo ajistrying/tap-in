@@ -33,6 +33,32 @@ const formatDate = (value: DocumentSummary["docDate"]) => {
 const sanitizeList = (values: string[]) =>
   values.map((value) => value.trim()).filter((value) => value.length > 0);
 
+const normalizeStatus = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (["active", "in progress", "in-progress", "active development", "development"].includes(normalized)) {
+    return "Active Development";
+  }
+  if (["building mvp", "build mvp", "mvp"].includes(normalized)) {
+    return "Building MVP";
+  }
+  if (["planning", "planned", "plan"].includes(normalized)) {
+    return "Planning";
+  }
+
+  return value;
+};
+
+const normalizeStatusList = (values: string[]) => {
+  const mapped = values
+    .map((value) => normalizeStatus(value))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(mapped)];
+};
+
 export const hasDocumentFilters = (plan: QueryPlan) => {
   if (plan.time_range) {
     return true;
@@ -54,7 +80,7 @@ export const hasDocumentFilters = (plan: QueryPlan) => {
 
 export const buildDocumentFilters = (plan: QueryPlan) => {
   const docTypes = sanitizeList(plan.doc_types);
-  const statuses = sanitizeList(plan.statuses);
+  const statuses = normalizeStatusList(sanitizeList(plan.statuses));
   const tags = sanitizeList(plan.tags);
   const project = plan.project?.trim() || null;
 

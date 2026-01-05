@@ -3,12 +3,38 @@ import type { RequestHandler } from "@sveltejs/kit";
 import { env as privateEnv } from "$env/dynamic/private";
 import { createDb } from "$lib/server/db";
 import { embedQuery } from "$lib/server/embeddings";
-import { findSimilarChunks, findSimilarChunksForSources } from "$lib/server/rag";
+import {
+  findChunksForSourcesByHeading,
+  findSimilarChunks,
+  findSimilarChunksForSources
+} from "$lib/server/rag";
 import { planQuery, type QueryPlan } from "$lib/server/queryPlanner";
 import { fetchDocumentsForPlan, formatDocumentContext, hasDocumentFilters } from "$lib/server/queryBuilder";
 
 const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";
 const DEFAULT_CHUNK_LIMIT = 8;
+const TODAY_FOCUS_HEADINGS = [
+  "%Today's Focus%",
+  "%Today's Priority%",
+  "%Must Do Today%",
+  "%Tasks%",
+  "%Carried from Yesterday%",
+  "%Recurring%"
+];
+
+const mergeChunks = (primary: any[], secondary: any[]) => {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const chunk of [...primary, ...secondary]) {
+    const key = String(chunk.id);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(chunk);
+  }
+  return merged;
+};
 
 const buildChunkContext = (chunks: any[], startIndex: number) =>
   chunks
@@ -18,10 +44,13 @@ const buildChunkContext = (chunks: any[], startIndex: number) =>
     })
     .join("\n\n");
 
-const buildSystemPrompt = (context: string) => `You are Wellington's public assistant.
-Answer questions about Wellington in a helpful, conversational tone, as if you are his assistant.
+const buildSystemPrompt = (context: string, today: string, timezone: string) => `You are Wellington's personal assistant.
+Answer questions about Wellington in a friendly, casual tone, speaking in third person (e.g., "Wellington is..." or "Today, Wellington is...").
+Assume pronouns like "he" or "his" refer to Wellington unless another person is explicitly named.
+Keep answers concise and skimmable. Use short Markdown sections and bullet lists when helpful.
 Use the context below only; if the answer is not in the context, say you don't know.
-Keep responses concise and cite sources inline like (Source 2).
+Do not include citations or source labels in the response.
+Today is ${today} (${timezone}).
 
 Context:
 ${context}`;
@@ -159,10 +188,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const composedQuestion = followup
       ? `Original question: ${followup.originalQuestion}\nFollow-up answer: ${userQuestion}`
       : userQuestion;
+    const wantsToday = /\b(today|now|current|this\s+morning|this\s+afternoon|this\s+evening)\b/i.test(
+      composedQuestion
+    );
     const timezone =
       typeof payload.timezone === "string" && payload.timezone.trim().length > 0
         ? payload.timezone.trim()
-        : "UTC";
+        : "America/New_York";
     const today = getTodayInTimezone(timezone);
 
     let plan = defaultQueryPlan();
@@ -170,6 +202,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       plan = await planQuery(runtimeEnv, composedQuestion, { today, timezone });
     } catch {
       plan = defaultQueryPlan();
+    }
+
+    if (!plan.time_range && wantsToday) {
+      plan = {
+        ...plan,
+        time_range: { start: today, end: today, timezone },
+        doc_types: plan.doc_types.includes("daily-note")
+          ? plan.doc_types
+          : [...plan.doc_types, "daily-note"]
+      };
     }
 
     if (plan.followup_question) {
@@ -202,19 +244,35 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const shouldFetchDocuments =
       effectiveAnswerMode === "sql_only" || (effectiveAnswerMode === "hybrid" && hasFilters);
 
-    const documents = shouldFetchDocuments ? await fetchDocumentsForPlan(db, plan) : [];
+    let documents = shouldFetchDocuments ? await fetchDocumentsForPlan(db, plan) : [];
+    if (documents.length === 0 && wantsToday) {
+      documents = await fetchDocumentsForPlan(
+        db,
+        {
+          ...plan,
+          time_range: null,
+          doc_types: ["daily-note"],
+          project: null,
+          statuses: [],
+          tags: []
+        },
+        3
+      );
+    }
     const documentContext = formatDocumentContext(documents, 1);
+    const sourceFiles = [...new Set(documents.map((doc) => doc.sourceFile))];
 
     let chunks: any[] = [];
     if (effectiveAnswerMode !== "sql_only") {
       const shouldUseHybrid = effectiveAnswerMode === "hybrid" && documents.length > 0;
       const shouldSearchVectors =
-        effectiveAnswerMode === "vector_only" || (shouldUseHybrid && documents.length > 0);
+        effectiveAnswerMode === "vector_only" ||
+        (shouldUseHybrid && documents.length > 0) ||
+        (effectiveAnswerMode === "hybrid" && documents.length === 0);
 
       if (shouldSearchVectors) {
         const embedding = await embedQuery(runtimeEnv, questionForContent);
         if (shouldUseHybrid) {
-          const sourceFiles = [...new Set(documents.map((doc) => doc.sourceFile))];
           chunks = await findSimilarChunksForSources(
             db,
             embedding,
@@ -227,7 +285,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       }
     }
 
-    const chunkContext = chunks.length > 0 ? buildChunkContext(chunks, documents.length + 1) : "";
+    const headingChunks =
+      wantsToday && sourceFiles.length > 0
+        ? await findChunksForSourcesByHeading(
+            db,
+            sourceFiles,
+            TODAY_FOCUS_HEADINGS,
+            DEFAULT_CHUNK_LIMIT
+          )
+        : [];
+    const combinedChunks = mergeChunks(headingChunks, chunks);
+    const chunkContext =
+      combinedChunks.length > 0
+        ? buildChunkContext(combinedChunks, documents.length + 1)
+        : "";
     const combinedContext = [documentContext, chunkContext].filter(Boolean).join("\n\n");
     const context =
       combinedContext.length > 0
@@ -240,7 +311,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         ? runtimeEnv.OPENROUTER_CHAT_MODEL.trim()
         : DEFAULT_CHAT_MODEL;
     const openrouter = new OpenRouter({ apiKey: runtimeEnv.OPENROUTER_API_KEY });
-    const system = buildSystemPrompt(context);
+    const system = buildSystemPrompt(context, today, timezone);
 
     const messages: ChatMessage[] =
       followup || !providedMessages

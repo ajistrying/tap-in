@@ -1,4 +1,4 @@
-import { and, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { contentChunks } from "./db/schema";
 import type { Database } from "./db";
 
@@ -49,5 +49,31 @@ export const findSimilarChunksForSources = async (
       and(isNotNull(contentChunks.embedding), inArray(contentChunks.sourceFile, sourceFiles))
     )
     .orderBy(sql`${contentChunks.embedding} <=> ${vectorLiteral}`)
+    .limit(limit);
+};
+
+export const findChunksForSourcesByHeading = async (
+  db: Database,
+  sourceFiles: string[],
+  headingPatterns: string[],
+  limit = 5
+) => {
+  if (sourceFiles.length === 0 || headingPatterns.length === 0) {
+    return [];
+  }
+
+  const headingFilter = or(...headingPatterns.map((pattern) => ilike(contentChunks.heading, pattern)));
+
+  return db
+    .select({
+      id: contentChunks.id,
+      content: contentChunks.content,
+      sourceFile: contentChunks.sourceFile,
+      heading: contentChunks.heading,
+      similarity: sql<number>`NULL`.as("similarity")
+    })
+    .from(contentChunks)
+    .where(and(inArray(contentChunks.sourceFile, sourceFiles), headingFilter))
+    .orderBy(contentChunks.id)
     .limit(limit);
 };

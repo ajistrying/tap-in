@@ -1,5 +1,6 @@
 export type PipelineOptions = {
   question: string;
+  messages?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   followup?: {
     originalQuestion: string;
   };
@@ -17,6 +18,7 @@ export const runPipeline = async (opts: PipelineOptions) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: opts.question,
+        messages: opts.messages,
         followup: opts.followup
       }),
       signal: opts.signal

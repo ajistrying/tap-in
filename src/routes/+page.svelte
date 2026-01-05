@@ -156,9 +156,9 @@
   </div>
   <section class="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-10">
     <header class="flex flex-col gap-3">
-      <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Ask about what I’m working on</h1>
-      <p class="sm:w-full lg:w-3/4 text-base text-base-content/70 sm:text-lg">
-        Curious about what I’m building, or what my tasks are for today? Use this chat to explore the publicly available information in my Personal Knowledge Management (PKM) system!
+      <h1 class="text-2xl font-semibold tracking-tight lg:text-left text-center">Ask about what I’m working on</h1>
+      <p class="sm:w-full lg:w-3/4 text-base text-base-content/70 sm:text-lg text-center lg:text-left">
+        Curious about what I’m building or what my tasks are for today? Use this chat to explore my Personal Knowledge Management (PKM) system!
       </p>
     </header>
 

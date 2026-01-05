@@ -1,8 +1,7 @@
 <script>
   import "../app.css";
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import { runPipeline } from "$lib/client/pipeline";
-  import { renderMarkdown } from "$lib/client/markdown";
   import ContactModal from "$lib/components/ContactModal.svelte";
 
   const exampleQuestions = [
@@ -22,6 +21,8 @@
   let activeAssistantId = null;
   let pendingFollowup = null;
   let contactModal;
+  let markdownReady = false;
+  let renderMarkdown = (content) => content ?? "";
 
   let messages = [
     {
@@ -31,6 +32,12 @@
         "Hello! I can answer questions about Wellington's current projects, daily notes, and various goals. What do you want to explore?"
     }
   ];
+
+  onMount(async () => {
+    const { renderMarkdown: render } = await import("$lib/client/markdown");
+    renderMarkdown = render;
+    markdownReady = true;
+  });
 
   const handleExampleClick = (question) => {
     inputValue = question;
@@ -197,7 +204,11 @@
                         {#if message.content}
                           {#if message.role === "assistant"}
                             <div class="prose prose-sm max-w-none">
-                              {@html renderMarkdown(message.content)}
+                              {#if markdownReady}
+                                {@html renderMarkdown(message.content)}
+                              {:else}
+                                {message.content}
+                              {/if}
                             </div>
                           {:else}
                             {message.content}

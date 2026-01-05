@@ -28,7 +28,7 @@
       id: "welcome",
       role: "assistant",
       content:
-        "Hi! I can answer questions about current projects, public notes, and things Wellington is building. What do you want to explore?"
+        "Hello! I can answer questions about Wellington's current projects, daily notes, and various goals. What do you want to explore?"
     }
   ];
 
@@ -185,7 +185,7 @@
                     {#each messages as message (message.id)}
                     <div class={`chat ${message.role === "user" ? "chat-end" : "chat-start"}`}>
                         <div class="chat-header text-xs opacity-60">
-                            {message.role === "user" ? "You" : "Wellington's PKMS"}
+                            {message.role === "user" ? "You" : "PKMS Assistant"}
                         </div>
                         <div
                         class={`chat-bubble ${

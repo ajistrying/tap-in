@@ -11,6 +11,7 @@ declare global {
                 OPENROUTER_API_KEY: string;
                 OPENROUTER_EMBEDDING_MODEL?: string;
                 OPENROUTER_CHAT_MODEL?: string;
+                OPENROUTER_PLANNER_MODEL?: string;
             };
             context: ExecutionContext;
             caches: CacheStorage & { default: Cache };

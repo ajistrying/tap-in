@@ -18,6 +18,7 @@
   let messageListEl;
   let abortController;
   let activeAssistantId = null;
+  let pendingFollowup = null;
 
   let messages = [
     {
@@ -51,6 +52,7 @@
       return;
     }
 
+    const followupContext = pendingFollowup;
     const userMessage = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -73,13 +75,33 @@
     try {
       await runPipeline({
         question: trimmed,
+        followup: followupContext
+          ? {
+              originalQuestion: followupContext.originalQuestion
+            }
+          : undefined,
         signal: abortController.signal,
         onToken: (token) => {
+          if (followupContext) {
+            pendingFollowup = null;
+          }
           messages = messages.map((message) =>
             message.id === assistantMessageId
               ? {
                   ...message,
                   content: token
+                }
+              : message
+          );
+          scrollToBottom("auto");
+        },
+        onFollowup: (payload) => {
+          pendingFollowup = payload;
+          messages = messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: payload.followupQuestion
                 }
               : message
           );
@@ -91,6 +113,7 @@
           activeAssistantId = null;
         },
         onError: (error) => {
+            console.error(error)
           const isAbort = error && typeof error === "object" && error.name === "AbortError";
           messages = messages.map((message) => {
             if (message.id !== assistantMessageId) {
@@ -111,6 +134,7 @@
         }
       });
     } catch (error) {
+        console.error(error);
       messages = messages.map((message) =>
         message.id === assistantMessageId
           ? {
@@ -133,7 +157,7 @@
   <section class="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-10">
     <header class="flex flex-col gap-3">
       <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Ask about what I’m working on</h1>
-      <p class="w-3/4 text-base text-base-content/70 sm:text-lg">
+      <p class="sm:w-full lg:w-3/4 text-base text-base-content/70 sm:text-lg">
         Curious about what I’m building, or what my tasks are for today? Use this chat to explore the publicly available information in my Personal Knowledge Management (PKM) system!
       </p>
     </header>
@@ -141,12 +165,12 @@
     <div class="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
         <!-- Chat window -->
         <div class="card bg-base-100/80 shadow-xl">
-            <div class="card-body flex min-h-[520px] flex-col gap-6 p-6 sm:p-8 lg:min-h-[600px]">
+            <div class="card-body flex h-[70vh] min-h-[520px] max-h-[70vh] flex-col gap-6 p-6 sm:p-8 lg:min-h-[600px] lg:h-[72vh] lg:max-h-[72vh]">
                 <div class="flex-1 min-h-0 space-y-4 overflow-y-auto pr-2 text-base" bind:this={messageListEl}>
                     {#each messages as message (message.id)}
                     <div class={`chat ${message.role === "user" ? "chat-end" : "chat-start"}`}>
                         <div class="chat-header text-xs opacity-60">
-                            {message.role === "user" ? "You" : "Wellington"}
+                            {message.role === "user" ? "You" : "Wellington's PKMS"}
                         </div>
                         <div
                         class={`chat-bubble ${
@@ -167,13 +191,17 @@
 
                 <div class="divider -my-1">Ask a question</div>
                 <form class="flex flex-col gap-3" on:submit|preventDefault={handleSubmit}>
+                    {#if pendingFollowup}
+                        <p class="text-xs text-base-content/70">
+                            Follow-up needed: {pendingFollowup.followupQuestion}
+                        </p>
+                    {/if}
                     <div class="flex w-full items-center gap-3">
                         <label class="input input-bordered flex w-full items-center gap-2">
-                            <span class="text-base-content/60">Q</span>
                             <input
                             type="text"
                             class="w-full grow"
-                            placeholder="Ask about projects, writing, or current goals..."
+                            placeholder="Ask a question!"
                             aria-label="Ask a question"
                             bind:value={inputValue}
                             bind:this={inputEl}

@@ -20,6 +20,9 @@ importers:
       drizzle-orm:
         specifier: ^0.39.0
         version: 0.39.3(@cloudflare/workers-types@4.20251231.0)(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)
+      zod:
+        specifier: ^4.3.4
+        version: 4.3.4
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20250101.0

@@ -1,21 +1,26 @@
 import { OpenRouter } from "@openrouter/sdk";
 import type { RequestHandler } from "@sveltejs/kit";
+import { env as privateEnv } from "$env/dynamic/private";
 import { createDb } from "$lib/server/db";
 import { embedQuery } from "$lib/server/embeddings";
-import { findSimilarChunks } from "$lib/server/rag";
+import { findSimilarChunks, findSimilarChunksForSources } from "$lib/server/rag";
+import { planQuery, type QueryPlan } from "$lib/server/queryPlanner";
+import { fetchDocumentsForPlan, formatDocumentContext, hasDocumentFilters } from "$lib/server/queryBuilder";
 
 const DEFAULT_CHAT_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_CHUNK_LIMIT = 8;
 
-const buildContext = (chunks: any[]) =>
+const buildChunkContext = (chunks: any[], startIndex: number) =>
   chunks
     .map((chunk, index) => {
       const heading = chunk.heading ? `# ${chunk.heading}` : "Untitled section";
-      return `Source ${index + 1}: ${chunk.sourceFile}\n${heading}\n${chunk.content}`;
+      return `Source ${startIndex + index}: ${chunk.sourceFile}\n${heading}\n${chunk.content}`;
     })
     .join("\n\n");
 
 const buildSystemPrompt = (context: string) => `You are Wellington's public assistant.
-Answer using only the context below. If the answer is not in the context, say you don't know.
+Answer questions about Wellington in a helpful, conversational tone, as if you are his assistant.
+Use the context below only; if the answer is not in the context, say you don't know.
 Keep responses concise and cite sources inline like (Source 2).
 
 Context:
@@ -25,6 +30,10 @@ type ChatMessage =
   | { role: "user"; content: string }
   | { role: "assistant"; content: string }
   | { role: "system"; content: string };
+
+type FollowupContext = {
+  originalQuestion: string;
+};
 
 const normalizeMessages = (payload: Record<string, unknown>): ChatMessage[] | null => {
   const rawMessages = payload.messages;
@@ -58,96 +67,241 @@ const normalizeMessages = (payload: Record<string, unknown>): ChatMessage[] | nu
     .filter((message): message is ChatMessage => Boolean(message));
 };
 
-export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform?.env) {
-    return new Response("Platform env is required.", { status: 500 });
+const normalizeFollowup = (payload: Record<string, unknown>): FollowupContext | null => {
+  const rawFollowup = payload.followup;
+  if (!rawFollowup || typeof rawFollowup !== "object") {
+    return null;
   }
 
-  if (!platform.env.DATABASE_URL) {
-    return new Response("DATABASE_URL is required.", { status: 500 });
-  }
-
-  if (!platform.env.OPENROUTER_API_KEY) {
-    return new Response("OPENROUTER_API_KEY is required.", { status: 500 });
-  }
-
-  let payload: Record<string, unknown>;
-  try {
-    payload = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return new Response("Invalid JSON payload.", { status: 400 });
-  }
-
-  const question =
-    typeof payload.message === "string"
-      ? payload.message
-      : typeof payload.query === "string"
-      ? payload.query
+  const followup = rawFollowup as Record<string, unknown>;
+  const originalQuestion =
+    typeof followup.originalQuestion === "string"
+      ? followup.originalQuestion
+      : typeof followup.original_question === "string"
+      ? followup.original_question
       : null;
-  const providedMessages = normalizeMessages(payload);
 
-  if (!question && (!providedMessages || providedMessages.length === 0)) {
-    return new Response("Missing message content.", { status: 400 });
+  if (!originalQuestion || originalQuestion.trim().length === 0) {
+    return null;
   }
 
-  const db = createDb(platform.env.DATABASE_URL);
-  const embedding = await embedQuery(platform.env, question ?? providedMessages?.at(-1)?.content ?? "");
-  const chunks = await findSimilarChunks(db, embedding, 5);
-  const context =
-    chunks.length > 0
-      ? buildContext(chunks)
-      : "No relevant context was found in the public notes.";
+  return { originalQuestion: originalQuestion.trim() };
+};
 
-  const modelId = platform.env.OPENROUTER_CHAT_MODEL ?? DEFAULT_CHAT_MODEL;
-  const openrouter = new OpenRouter({ apiKey: platform.env.OPENROUTER_API_KEY });
-  const system = buildSystemPrompt(context);
+const getTodayInTimezone = (timezone: string) => {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  }
+};
 
-  const messages: ChatMessage[] = providedMessages ?? [{ role: "user", content: question ?? "" }];
-  const payloadMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
+const defaultQueryPlan = (): QueryPlan => ({
+  intent: "lookup",
+  time_range: null,
+  doc_types: [],
+  project: null,
+  statuses: [],
+  tags: [],
+  answer_mode: "vector_only",
+  limit: 50,
+  followup_question: null
+});
 
-  const stream = await openrouter.chat.send(
-    {
-      model: modelId,
-      stream: true,
-      messages: payloadMessages
-    },
-    {
-      signal: request.signal
+export const POST: RequestHandler = async ({ request, platform }) => {
+  const runtimeEnv = (platform?.env ?? privateEnv) as App.Platform["env"];
+  // Use Cloudflare runtime env when available; fall back to SvelteKit private env for local dev.
+
+  try {
+    if (!runtimeEnv.DATABASE_URL) {
+      return new Response("DATABASE_URL is required.", { status: 500 });
     }
-  );
 
-  const responseStream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      try {
-        for await (const chunk of stream) {
-          if (chunk.error) {
-            throw new Error(chunk.error.message);
-          }
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) {
-            controller.enqueue(encoder.encode(delta));
+    if (!runtimeEnv.OPENROUTER_API_KEY) {
+      return new Response("OPENROUTER_API_KEY is required.", { status: 500 });
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return new Response("Invalid JSON payload.", { status: 400 });
+    }
+
+    const question =
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.query === "string"
+        ? payload.query
+        : null;
+    const providedMessages = normalizeMessages(payload);
+    const followup = normalizeFollowup(payload);
+
+    if (!question && (!providedMessages || providedMessages.length === 0)) {
+      return new Response("Missing message content.", { status: 400 });
+    }
+
+    const db = createDb(runtimeEnv.DATABASE_URL);
+    const userQuestion =
+      question ??
+      providedMessages?.slice().reverse().find((message) => message.role === "user")?.content ??
+      "";
+    const composedQuestion = followup
+      ? `Original question: ${followup.originalQuestion}\nFollow-up answer: ${userQuestion}`
+      : userQuestion;
+    const timezone =
+      typeof payload.timezone === "string" && payload.timezone.trim().length > 0
+        ? payload.timezone.trim()
+        : "UTC";
+    const today = getTodayInTimezone(timezone);
+
+    let plan = defaultQueryPlan();
+    try {
+      plan = await planQuery(runtimeEnv, composedQuestion, { today, timezone });
+    } catch {
+      plan = defaultQueryPlan();
+    }
+
+    if (plan.followup_question) {
+      const originalQuestion = followup?.originalQuestion ?? userQuestion;
+      return new Response(
+        JSON.stringify({
+          type: "followup",
+          followupQuestion: plan.followup_question,
+          originalQuestion
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache"
           }
         }
-      } catch (error) {
-        controller.error(error);
-      } finally {
-        controller.close();
-      }
-    },
-    async cancel() {
-      try {
-        await stream.cancel();
-      } catch {
-        // ignore cancel errors
-      }
+      );
     }
-  });
 
-  return new Response(responseStream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-cache"
+    if (!composedQuestion) {
+      return new Response("Missing message content.", { status: 400 });
     }
-  });
+
+    const questionForMessages = followup ? composedQuestion : userQuestion;
+    const questionForContent = composedQuestion;
+
+    const hasFilters = hasDocumentFilters(plan);
+    const effectiveAnswerMode =
+      plan.answer_mode === "hybrid" && !hasFilters ? "vector_only" : plan.answer_mode;
+    const shouldFetchDocuments =
+      effectiveAnswerMode === "sql_only" || (effectiveAnswerMode === "hybrid" && hasFilters);
+
+    const documents = shouldFetchDocuments ? await fetchDocumentsForPlan(db, plan) : [];
+    const documentContext = formatDocumentContext(documents, 1);
+
+    let chunks: any[] = [];
+    if (effectiveAnswerMode !== "sql_only") {
+      const shouldUseHybrid = effectiveAnswerMode === "hybrid" && documents.length > 0;
+      const shouldSearchVectors =
+        effectiveAnswerMode === "vector_only" || (shouldUseHybrid && documents.length > 0);
+
+      if (shouldSearchVectors) {
+        const embedding = await embedQuery(runtimeEnv, questionForContent);
+        if (shouldUseHybrid) {
+          const sourceFiles = [...new Set(documents.map((doc) => doc.sourceFile))];
+          chunks = await findSimilarChunksForSources(
+            db,
+            embedding,
+            sourceFiles,
+            DEFAULT_CHUNK_LIMIT
+          );
+        } else {
+          chunks = await findSimilarChunks(db, embedding, DEFAULT_CHUNK_LIMIT);
+        }
+      }
+    }
+
+    const chunkContext = chunks.length > 0 ? buildChunkContext(chunks, documents.length + 1) : "";
+    const combinedContext = [documentContext, chunkContext].filter(Boolean).join("\n\n");
+    const context =
+      combinedContext.length > 0
+        ? combinedContext
+        : "No relevant context was found in the public notes.";
+
+    const modelId =
+      typeof runtimeEnv.OPENROUTER_CHAT_MODEL === "string" &&
+      runtimeEnv.OPENROUTER_CHAT_MODEL.trim().length > 0
+        ? runtimeEnv.OPENROUTER_CHAT_MODEL.trim()
+        : DEFAULT_CHAT_MODEL;
+    const openrouter = new OpenRouter({ apiKey: runtimeEnv.OPENROUTER_API_KEY });
+    const system = buildSystemPrompt(context);
+
+    const messages: ChatMessage[] =
+      followup || !providedMessages
+        ? [{ role: "user", content: questionForMessages }]
+        : providedMessages;
+    const payloadMessages: ChatMessage[] = [{ role: "system", content: system }, ...messages];
+
+    const stream = await openrouter.chat.send(
+      {
+        model: modelId,
+        stream: true,
+        messages: payloadMessages
+      },
+      {
+        signal: request.signal
+      }
+    );
+
+    const responseStream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        try {
+          for await (const chunk of stream) {
+            if (chunk.error) {
+              throw new Error(chunk.error.message);
+            }
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) {
+              controller.enqueue(encoder.encode(delta));
+            }
+          }
+        } catch (error) {
+          controller.error(error);
+        } finally {
+          controller.close();
+        }
+      },
+      async cancel() {
+        try {
+          await stream.cancel();
+        } catch {
+          // ignore cancel errors
+        }
+      }
+    });
+
+    return new Response(responseStream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache"
+      }
+    });
+  } catch (error) {
+    console.error("Chat API error", error);
+    const message = error instanceof Error ? error.message : "Internal Error";
+    return new Response(JSON.stringify({ message }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-cache"
+      }
+    });
+  }
 };

@@ -9,7 +9,11 @@ export const embedQuery = async (env: App.Platform["env"], input: string) => {
   }
 
   const openrouter = new OpenRouter({ apiKey: env.OPENROUTER_API_KEY });
-  const modelId = env.OPENROUTER_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+  const modelId =
+    typeof env.OPENROUTER_EMBEDDING_MODEL === "string" &&
+    env.OPENROUTER_EMBEDDING_MODEL.trim().length > 0
+      ? env.OPENROUTER_EMBEDDING_MODEL.trim()
+      : DEFAULT_EMBEDDING_MODEL;
   const requestedDimensions = EMBEDDING_DIMENSIONS;
 
   let response;

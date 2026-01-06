@@ -92,6 +92,11 @@
         role: message.role,
         content: message.content
       }));
+    console.log("[chat] send", {
+      question: trimmed,
+      followup: followupContext,
+      messages: payloadMessages
+    });
 
     try {
       await runPipeline({
@@ -118,6 +123,7 @@
           scrollToBottom("auto");
         },
         onFollowup: (payload) => {
+          console.log("[chat] followup", payload);
           pendingFollowup = payload;
           messages = messages.map((message) =>
             message.id === assistantMessageId

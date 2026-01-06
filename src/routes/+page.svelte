@@ -92,11 +92,6 @@
         role: message.role,
         content: message.content
       }));
-    console.log("[chat] send", {
-      question: trimmed,
-      followup: followupContext,
-      messages: payloadMessages
-    });
 
     try {
       await runPipeline({

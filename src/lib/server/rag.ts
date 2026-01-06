@@ -1,5 +1,5 @@
-import { and, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
-import { contentChunks } from "./db/schema";
+import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { contentChunks, documents } from "./db/schema";
 import type { Database } from "./db";
 
 const formatVector = (embedding: number[]) =>
@@ -18,7 +18,13 @@ export const findSimilarChunks = async (db: Database, embedding: number[], limit
       similarity
     })
     .from(contentChunks)
-    .where(isNotNull(contentChunks.embedding))
+    .innerJoin(documents, eq(documents.sourceFile, contentChunks.sourceFile))
+    .where(
+      and(
+        isNotNull(contentChunks.embedding),
+        eq(documents.isTemplate, false)
+      )
+    )
     .orderBy(sql`${contentChunks.embedding} <=> ${vectorLiteral}`)
     .limit(limit);
 };
@@ -45,8 +51,14 @@ export const findSimilarChunksForSources = async (
       similarity
     })
     .from(contentChunks)
+    .innerJoin(documents, eq(documents.sourceFile, contentChunks.sourceFile))
     .where(
-      and(isNotNull(contentChunks.embedding), inArray(contentChunks.sourceFile, sourceFiles))
+      and(
+        isNotNull(contentChunks.embedding),
+        inArray(contentChunks.sourceFile, sourceFiles),
+        eq(documents.public, true),
+        eq(documents.isTemplate, false)
+      )
     )
     .orderBy(sql`${contentChunks.embedding} <=> ${vectorLiteral}`)
     .limit(limit);
@@ -73,7 +85,15 @@ export const findChunksForSourcesByHeading = async (
       similarity: sql<number>`NULL`.as("similarity")
     })
     .from(contentChunks)
-    .where(and(inArray(contentChunks.sourceFile, sourceFiles), headingFilter))
+    .innerJoin(documents, eq(documents.sourceFile, contentChunks.sourceFile))
+    .where(
+      and(
+        inArray(contentChunks.sourceFile, sourceFiles),
+        headingFilter,
+        eq(documents.public, true),
+        eq(documents.isTemplate, false)
+      )
+    )
     .orderBy(contentChunks.id)
     .limit(limit);
 };

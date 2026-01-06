@@ -223,11 +223,6 @@
 
                 <div class="divider -my-1">Ask a question</div>
                 <form class="flex flex-col gap-3" on:submit|preventDefault={handleSubmit}>
-                    {#if pendingFollowup}
-                        <p class="text-xs text-base-content/70">
-                            Follow-up needed: {pendingFollowup.followupQuestion}
-                        </p>
-                    {/if}
                     <div class="flex w-full items-center gap-3">
                         <label class="input input-bordered flex w-full items-center gap-2">
                             <input

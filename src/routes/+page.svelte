@@ -178,9 +178,9 @@
   </div>
   <section class="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-10">
     <header class="flex flex-col gap-3">
-      <h1 class="text-2xl font-semibold tracking-tight lg:text-left text-center">Ask about what I’m working on</h1>
+      <h1 class="text-2xl font-semibold tracking-tight lg:text-left text-center">Hey 👋🏾 welcome to my interative PKMS</h1>
       <p class="sm:w-full lg:w-3/4 text-base text-base-content/70 sm:text-lg text-center lg:text-left">
-        Curious about what I’m building or what my tasks are for today? Use this chat to explore my Personal Knowledge Management (PKM) system!
+        I made my Personal Knowledge Management System (PKMS) interactive. Ask me about what I'm working on, my goals, and anything I've documented in my public notes!
       </p>
     </header>
 
@@ -273,9 +273,27 @@
                 </div>
                 <div class="divider text-xs text-base-content/40 -my-1">or</div>
                 <div class="space-y-3 text-sm text-base-content/70">
-                    <p class="text-sm text-base-content/60">
-                        Want to collaborate or share a note? Drop me a message.
-                    </p>
+                    <ul class="space-y-2 text-sm text-base-content/70">
+                        <li class="flex items-center gap-2">
+                            Want to...
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="h-2 w-2 rounded-full bg-primary"></span>
+                            Drop a note?
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="h-2 w-2 rounded-full bg-primary"></span>
+                            Suggest a feature?
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="h-2 w-2 rounded-full bg-primary"></span>
+                            Report a bug?
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <span class="h-2 w-2 rounded-full bg-primary"></span>
+                            Collaborate on a project?
+                        </li>
+                    </ul>
                     <button class="btn btn-outline btn-sm w-full" type="button" on:click={openContactModal}>
                         Contact me
                     </button>

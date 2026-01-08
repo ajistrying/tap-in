@@ -179,9 +179,12 @@
   </div>
   <section class="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-10">
     <header class="flex flex-col gap-3">
-      <h1 class="text-2xl font-semibold tracking-tight lg:text-left text-center">Hey 👋🏾 welcome to my interative PKMS</h1>
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight lg:text-left text-center">Hey 👋🏾 welcome to my interactive PKMS</h1>
+        <a href="/about" class="link link-hover text-sm text-base-content/60 text-center lg:text-right">About Wellington →</a>
+      </div>
       <p class="sm:w-full lg:w-3/4 text-base text-base-content/70 sm:text-lg text-center lg:text-left">
-        I made my Personal Knowledge Management System (PKMS) interactive. Ask me about what I'm working on, my goals, and anything I've documented in my public notes!
+        I opened up my Personal Knowledge Management System (PKMS) so you can have a conversation with it. Ask it what I'm working on, my goals, and any ideas I have rolling aroud in my head!
       </p>
     </header>
 
